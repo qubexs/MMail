@@ -4,7 +4,6 @@
  * Version: 4.1b
  */
 
-
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu("Merge Tools")
@@ -18,9 +17,20 @@ function onOpen() {
     .addItem("Edit Email Template", "openEmailTemplateEditor") // NEW
     .addItem("Preview Email for Selected Row", "previewEmailForSelectedRow") // NEW
     .addItem("Send Emails", "sendCertificatesEmail")
+    //.addItem("tESTT", "TESTaWSD")
+    .addSeparator()
+    
+
     .addToUi();
 }
 
+
+
+function TESTaWSD() {
+  const templateId = PropertiesService.getDocumentProperties().getProperty("TEMPLATE_ID");
+  const file = DriveApp.getFileById(templateId);
+  Logger.log(file.getName());
+} 
 
 function openConfigDialog() {
   const html = HtmlService.createHtmlOutputFromFile("ConfigDialog")
@@ -221,7 +231,6 @@ function testAccess() {
   ui.alert("Access Test Result", msg, ui.ButtonSet.OK);
 }
 
-
 // ---------------- Generate Certificates Only (DYNAMIC) ----------------
 function generateCertificates() {
   const ui = SpreadsheetApp.getUi();
@@ -236,7 +245,7 @@ function generateCertificates() {
     return;
   }
 
-  const mapping = JSON.parse(mappingRaw); // { dValue1: "{{value2}}", ... }
+  const mapping = JSON.parse(mappingRaw); // { dValue12: "{{value12}}", ... }
 
   const sheet  = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   const data   = sheet.getDataRange().getValues();
@@ -249,21 +258,33 @@ function generateCertificates() {
   // Malay month names
   const months = ["Jan","Feb","Mac","Apr","Mei","Jun","Jul","Ogos","Sep","Okt","Nov","Dis"];
 
-  // Build header -> column index map (skip first column = index)
+  // Build header -> column index map (all headers)
   const headerIndexMap = {};
-  for (let c = 1; c < headers.length; c++) {
-    if (headers[c]) headerIndexMap[headers[c]] = c;
+  headers.forEach((h, i) => {
+    if (h) headerIndexMap[h] = i;
+  });
+
+  // Build mapping dValue -> column index dynamically
+  const mappingIndexes = {};
+  for (const dKey in mapping) {
+    const placeholder = mapping[dKey]; // e.g., {{value11}}
+    const valueNum = parseInt(placeholder.replace(/[^0-9]/g, ""), 10); // get number from valueXX
+    const colIndex = valueNum - 1; // zero-based index
+    mappingIndexes[dKey] = colIndex;
+  }
+
+  // Find Jana and FileID columns by header
+  const janaColIndex = headerIndexMap["Jana"];
+  const fileIdColIndex = headerIndexMap["FileID"];
+
+  if (janaColIndex === undefined || fileIdColIndex === undefined) {
+    ui.alert("Required column 'Jana' or 'FileID' not found.");
+    return;
   }
 
   for (let i = 1; i < data.length; i++) { // skip header row
     const rowNumber = i + 1;
     const row = data[i];
-
-    const janaColIndex = headerIndexMap["Jana"]; // MUST exist
-    if (!janaColIndex && janaColIndex !== 0) {
-      ui.alert("Column 'Jana' not found.");
-      return;
-    }
 
     if (!row[1]) continue; // skip empty name rows
     if (row[janaColIndex] && !row[janaColIndex].toString().startsWith("ERR")) continue;
@@ -271,20 +292,17 @@ function generateCertificates() {
     try {
       // Copy template
       const copyDoc = DriveApp.getFileById(templateId)
-        .makeCopy("Certificate - " + row[1], folder);
+        .makeCopy("TEMP - " + row[1], folder);
 
       const doc  = DocumentApp.openById(copyDoc.getId());
       const body = doc.getBody();
 
       // Loop mapping dynamically
       for (const dKey in mapping) {
-        const placeholder = mapping[dKey]; // {{valueX}}
+        const placeholder = mapping[dKey];
         if (!placeholder) continue;
 
-        // dValueN -> column index (skip index column)
-        const colNumber = parseInt(dKey.replace("dValue", ""), 10);
-        const colIndex  = colNumber; // already offset because col 0 = index
-
+        const colIndex  = mappingIndexes[dKey];
         let value = row[colIndex] ?? "";
 
         // Auto-format Date → Malay DD MMM YYYY
@@ -312,24 +330,21 @@ function generateCertificates() {
       const yy = String(now.getFullYear()).slice(-2);
       const mm = String(now.getMonth() + 1).padStart(2, "0");
       const dd = String(now.getDate()).padStart(2, "0");
-
       const pdfName = `DOC_${random12}_${yy}${mm}${dd}.pdf`;
+
       folder.createFile(pdfBlob).setName(pdfName);
 
       // Trash temp doc
       copyDoc.setTrashed(true);
 
-      // Update Jana + FileID (by header name)
-      if (headerIndexMap["Jana"] !== undefined)
-        sheet.getRange(rowNumber, headerIndexMap["Jana"] + 1).setValue(new Date());
-
-      if (headerIndexMap["FileID"] !== undefined)
-        sheet.getRange(rowNumber, headerIndexMap["FileID"] + 1).setValue(pdfName);
+      // Update Jana + FileID in sheet
+      sheet.getRange(rowNumber, janaColIndex + 1).setValue(new Date());
+      sheet.getRange(rowNumber, fileIdColIndex + 1).setValue(pdfName);
 
       countGenerated++;
 
     } catch (e) {
-      sheet.getRange(rowNumber, headerIndexMap["Jana"] + 1)
+      sheet.getRange(rowNumber, janaColIndex + 1)
         .setValue("ERR: " + e.message);
 
       errorRows.push(`Row ${rowNumber}: ${e.message}`);
@@ -337,16 +352,17 @@ function generateCertificates() {
     }
   }
 
-  let msg = `Merge generation complete!\nTotal generated: ${countGenerated}`;
+  let msg = `✅ Merge generation complete!\nTotal generated: ${countGenerated}`;
   if (errorRows.length) msg += "\n\nErrors:\n" + errorRows.join("\n");
 
   ui.alert(msg);
 }
 
+
 // Open the HTML editor popup
 function openEmailTemplateEditor() {
   const html = HtmlService.createHtmlOutputFromFile("EmailTemplateEditor")
-      .setWidth(600)
+      .setWidth(800)
       .setHeight(400);
   SpreadsheetApp.getUi().showModalDialog(html, "Email Template Editor");
 }
@@ -388,7 +404,7 @@ function getEmailAndFileIdFromRow(row) {
   return { email, fileId };
 }
 
-// ---------------- Preview Email (Mapping-driven Email/FileID) ----------------
+// ---------------- Preview Email (Fixed - Mapping-driven) ----------------
 function previewEmailForSelectedRow() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   const selection = sheet.getActiveRange();
@@ -397,118 +413,257 @@ function previewEmailForSelectedRow() {
   const rowNumber = selection.getRow();
   if (rowNumber === 1) return SpreadsheetApp.getUi().alert("Please select a data row, not the header.");
 
-  const row = sheet.getRange(rowNumber, 1, 1, sheet.getLastColumn()).getValues()[0];
   const props = PropertiesService.getDocumentProperties();
-  const mapping = JSON.parse(props.getProperty("MAPPING"));
+  const mappingProp = props.getProperty("MAPPING");
   const subjectTpl = props.getProperty("EMAIL_SUBJECT");
-  const bodyTpl    = props.getProperty("EMAIL_BODY");
+  const bodyTpl = props.getProperty("EMAIL_BODY");
 
-  if (!mapping || !subjectTpl || !bodyTpl)
-    return SpreadsheetApp.getUi().alert("Missing Mapping or Email Template.");
+  if (!mappingProp || !subjectTpl || !bodyTpl)
+    return SpreadsheetApp.getUi().alert("Missing Mapping or Email Template. Please run Setup first.");
 
-  // --- Get column indexes dynamically from mapping ---
-  const emailColIndex = parseInt("6".replace("dValue", "")) - 1;   // Hardcoded example: dValue6 is email
-  const fileIdColIndex = parseInt("9".replace("dValue", "")) - 1;  // Hardcoded example: dValue9 is fileId
+  const mapping = JSON.parse(mappingProp);
+  
+  // Get the row data
+  const row = sheet.getRange(rowNumber, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
 
-  // Better: read from mapping keys dynamically (from your config)
-  // Find the mapping keys for email/fileid
-  let emailKey = Object.keys(mapping).find(k => k === "dValue6");   // replace with your actual dValue for email
-  let fileIdKey = Object.keys(mapping).find(k => k === "dValue9");  // replace with your actual dValue for fileId
+  // Auto-detect Email and FileID columns (same logic as send function)
+  let emailColIndex = null;
+  let fileNameColIndex = null;
 
-  const email = emailKey ? row[parseInt(emailKey.replace("dValue",""))] : "(missing)";
-  const fileId = fileIdKey ? row[parseInt(fileIdKey.replace("dValue",""))] : "(missing)";
+  // First try: Check first data row for patterns
+  if (rowNumber > 1) {
+    for (const dKey in mapping) {
+      const colIndex = parseInt(dKey.replace("dValue", ""), 10) - 1;
+      if (colIndex >= row.length) continue;
+      
+      const value = String(row[colIndex] || "");
+      
+      // Detect email
+      if (value.includes("@") && value.includes(".")) {
+        emailColIndex = colIndex;
+      }
+      // Detect PDF filename
+      else if (value.startsWith("DOC_") && value.endsWith(".pdf")) {
+        fileNameColIndex = colIndex;
+      }
+    }
+  }
 
-  // Replace placeholders in subject/body dynamically
+  // Second try: Search headers
+  if (emailColIndex === null) {
+    emailColIndex = headers.findIndex(h => /email|e-mail|emel/i.test(String(h)));
+  }
+  if (fileNameColIndex === null) {
+    fileNameColIndex = headers.findIndex(h => /fileid|file.*name|pdf|sijil/i.test(String(h)));
+  }
+
+  // Third try: Look for specific placeholder names in mapping
+  if (emailColIndex === null) {
+    // Find mapping value that looks like an email placeholder {{email}} or {{emel}}
+    for (const dKey in mapping) {
+      if (/email|emel/i.test(mapping[dKey])) {
+        emailColIndex = parseInt(dKey.replace("dValue", ""), 10) - 1;
+        break;
+      }
+    }
+  }
+
+  const email = emailColIndex !== null && emailColIndex !== -1 ? row[emailColIndex] : "(email not detected)";
+  const fileId = fileNameColIndex !== null && fileNameColIndex !== -1 ? row[fileNameColIndex] : "(filename not detected)";
+
+  // Replace placeholders in subject/body using mapping
   const subject = Object.keys(mapping).reduce((acc, dKey) => {
-    const value = row[parseInt(dKey.replace("dValue", ""))] ?? "";
-    return acc.replace(new RegExp("\\{\\{\\s*" + mapping[dKey].replace(/[{}]/g,"") + "\\s*\\}\\}", "g"), value);
+    const placeholder = mapping[dKey].replace(/[{}]/g, "");
+    const colIndex = parseInt(dKey.replace("dValue", ""), 10) - 1;
+    const value = row[colIndex] ?? "";
+    return acc.replace(new RegExp("\\{\\{\\s*" + placeholder + "\\s*\\}\\}", "g"), value);
   }, subjectTpl);
 
   const body = Object.keys(mapping).reduce((acc, dKey) => {
-    const value = row[parseInt(dKey.replace("dValue", ""))] ?? "";
-    return acc.replace(new RegExp("\\{\\{\\s*" + mapping[dKey].replace(/[{}]/g,"") + "\\s*\\}\\}", "g"), value);
+    const placeholder = mapping[dKey].replace(/[{}]/g, "");
+    const colIndex = parseInt(dKey.replace("dValue", ""), 10) - 1;
+    const value = row[colIndex] ?? "";
+    return acc.replace(new RegExp("\\{\\{\\s*" + placeholder + "\\s*\\}\\}", "g"), value);
   }, bodyTpl);
 
+  // Build preview HTML
   const htmlContent = `
-    <div style="font-family:Arial; padding:12px;">
-      <h3>Email Preview</h3>
-      <p><strong>To:</strong> ${email}</p>
-      <p><strong>Subject:</strong> ${subject}</p>
-      <h4>Body:</h4>
-      <div style="border:1px solid #ccc; padding:10px; max-height:300px; overflow:auto;">${body}</div>
-      <button onclick="google.script.host.close()" style="margin-top:10px;padding:6px 12px;">Close</button>
-    </div>
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <base target="_top">
+      <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .field { margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; }
+        .label { font-weight: bold; color: #555; font-size: 12px; text-transform: uppercase; }
+        .value { margin-top: 4px; color: #333; }
+        .body-box { border: 1px solid #ddd; padding: 15px; border-radius: 4px; background: white; max-height: 300px; overflow: auto; }
+        .attachment { color: #4285f4; }
+        button { margin-top: 15px; padding: 10px 20px; background: #4285f4; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #3367d6; }
+        .warning { color: #f44336; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h3>📧 Email Preview - Row ${rowNumber}</h3>
+        
+        <div class="field">
+          <div class="label">To:</div>
+          <div class="value">${email} ${emailColIndex === null ? '<span class="warning">⚠️ Could not detect email column</span>' : ''}</div>
+        </div>
+        
+        <div class="field">
+          <div class="label">Attachment:</div>
+          <div class="value attachment">${fileId} ${fileNameColIndex === null ? '<span class="warning">⚠️ Could not detect PDF column</span>' : ''}</div>
+        </div>
+        
+        <div class="field">
+          <div class="label">Subject:</div>
+          <div class="value">${subject}</div>
+        </div>
+        
+        <div class="field">
+          <div class="label">Body:</div>
+          <div class="body-box">${body}</div>
+        </div>
+        
+        <button onclick="google.script.host.close()">Close Preview</button>
+      </div>
+    </body>
+    </html>
   `;
 
   SpreadsheetApp.getUi().showModalDialog(
-    HtmlService.createHtmlOutput(htmlContent).setWidth(600).setHeight(400),
-    `Preview Email - Row ${rowNumber}`
+    HtmlService.createHtmlOutput(htmlContent).setWidth(650).setHeight(500),
+    `Preview - Row ${rowNumber}`
   );
 }
 
 
-// ---------------- Send Emails (Mapping-driven Email/FileID) ----------------
+// ---------------- Send Emails (Mapping-driven Email/FileID/Dynamic Mapping) ----------------
 function sendCertificatesEmail() {
   const ui = SpreadsheetApp.getUi();
   const props = PropertiesService.getDocumentProperties();
-  const mapping = JSON.parse(props.getProperty("MAPPING"));
-  const subjectTpl = props.getProperty("EMAIL_SUBJECT");
-  const bodyTpl    = props.getProperty("EMAIL_BODY");
 
-  if (!mapping || !subjectTpl || !bodyTpl)
-    return ui.alert("Missing Mapping or Email Template.");
+  const mappingProp = props.getProperty("MAPPING");
+  const folderId = props.getProperty("FOLDER_ID");
+  const subjectTpl = props.getProperty("EMAIL_SUBJECT") || "Your Certificate";
+  const bodyTpl = props.getProperty("EMAIL_BODY") || "Dear {{value1}},\n\nPlease find your certificate attached.";
 
+  if (!mappingProp || !folderId) {
+    return ui.alert("Mapping or Folder ID not found. Please run 'Setup Template & Folder' first.");
+  }
+
+  const mapping = JSON.parse(mappingProp);
+  const folder = DriveApp.getFolderById(folderId);
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  const data  = sheet.getDataRange().getValues();
-  const sentColIndex = sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0].indexOf("Sent");
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
 
-  // Find the column indexes from mapping
-  const emailColKey = Object.keys(mapping).find(dKey => mapping[dKey].toLowerCase().includes("email"));
-  const fileIdColKey = Object.keys(mapping).find(dKey => mapping[dKey].toLowerCase().includes("fileid"));
-  const emailColIndex = emailColKey ? parseInt(emailColKey.replace("dValue", ""), 10) : null;
-  const fileIdColIndex = fileIdColKey ? parseInt(fileIdColKey.replace("dValue", ""), 10) : null;
+  // Find "Hantar" column
+  const sentColIndex = headers.indexOf("Hantar");
+  if (sentColIndex === -1) return ui.alert("Column 'Sent' not found!");
 
-  let sentCount = 0, errorRows = [];
+  // Auto-detect Email and FileID (PDF Name) columns
+  let emailColIndex = null;
+  let fileNameColIndex = null;
+  
+  if (data.length > 1) {
+    const firstRow = data[1];
+    
+    for (const dKey in mapping) {
+      const colIndex = parseInt(dKey.replace("dValue", ""), 10) - 1;
+      if (colIndex >= firstRow.length) continue;
+      
+      const value = String(firstRow[colIndex] || "");
+      
+      // Detect email
+      if (value.includes("@") && value.includes(".")) {
+        emailColIndex = colIndex;
+      }
+      // Detect PDF filename (starts with DOC_ and ends with .pdf)
+      else if (value.startsWith("DOC_") && value.endsWith(".pdf")) {
+        fileNameColIndex = colIndex;
+      }
+    }
+  }
+
+  // Fallback to header names if auto-detect fails
+  if (emailColIndex === null) {
+    emailColIndex = headers.findIndex(h => /email|e-mail|emel/i.test(String(h)));
+  }
+  if (fileNameColIndex === null) {
+    fileNameColIndex = headers.findIndex(h => /fileid|file.*name|pdf/i.test(String(h)));
+  }
+
+  if (emailColIndex === null || fileNameColIndex === null) {
+    return ui.alert(
+      `Could not detect columns:\n` +
+      `Email: ${emailColIndex !== null ? 'Found' : 'NOT FOUND'}\n` +
+      `PDF Filename: ${fileNameColIndex !== null ? 'Found' : 'NOT FOUND'}\n\n` +
+      `Please ensure you have run "Generate Merge Doc" first.`
+    );
+  }
+
+  let sentCount = 0;
+  let errorRows = [];
 
   for (let i = 1; i < data.length; i++) {
     const rowNumber = i + 1;
     const row = data[i];
 
-    if (sentColIndex !== -1 && row[sentColIndex] && !row[sentColIndex].toString().startsWith("ERR")) continue;
+    // Skip already sent
+    if (row[sentColIndex] && !row[sentColIndex].toString().startsWith("ERR")) continue;
+    if (!row[1]) continue;
 
     try {
-      const email = emailColIndex !== null ? row[emailColIndex] : null;
-      const fileId = fileIdColIndex !== null ? row[fileIdColIndex] : null;
-      if (!email || !fileId) throw new Error("Email or FileID missing");
+      const email = row[emailColIndex];
+      const pdfName = row[fileNameColIndex];
+      
+      if (!email) throw new Error("Email missing");
+      if (!pdfName) throw new Error("PDF filename missing");
 
+      // Find PDF file by name in the folder
+      const files = folder.getFilesByName(pdfName);
+      if (!files.hasNext()) {
+        throw new Error(`PDF not found in Drive: ${pdfName}`);
+      }
+      const pdfFile = files.next().getAs(MimeType.PDF);
+
+      // Replace placeholders in subject/body
       const subject = Object.keys(mapping).reduce((acc, dKey) => {
-        const placeholder = mapping[dKey];
-        const value = row[parseInt(dKey.replace("dValue", ""), 10)] ?? "";
-        return acc.replace(new RegExp("\\{\\{\\s*" + placeholder.replace(/[{}]/g, "") + "\\s*\\}\\}", "g"), value);
+        const placeholder = mapping[dKey].replace(/[{}]/g, "");
+        const colIndex = parseInt(dKey.replace("dValue", ""), 10) - 1;
+        const value = row[colIndex] ?? "";
+        return acc.replace(new RegExp("\\{\\{\\s*" + placeholder + "\\s*\\}\\}", "g"), value);
       }, subjectTpl);
 
       const body = Object.keys(mapping).reduce((acc, dKey) => {
-        const placeholder = mapping[dKey];
-        const value = row[parseInt(dKey.replace("dValue", ""), 10)] ?? "";
-        return acc.replace(new RegExp("\\{\\{\\s*" + placeholder.replace(/[{}]/g, "") + "\\s*\\}\\}", "g"), value);
+        const placeholder = mapping[dKey].replace(/[{}]/g, "");
+        const colIndex = parseInt(dKey.replace("dValue", ""), 10) - 1;
+        const value = row[colIndex] ?? "";
+        return acc.replace(new RegExp("\\{\\{\\s*" + placeholder + "\\s*\\}\\}", "g"), value);
       }, bodyTpl);
 
-      const pdfFile = DriveApp.getFileById(fileId).getAs(MimeType.PDF);
-
+      // Send email
       MailApp.sendEmail({
         to: email,
         subject: subject,
-        htmlBody: body,
+        htmlBody: body.replace(/\n/g, "<br>"),
         attachments: [pdfFile]
       });
 
-      if (sentColIndex !== -1) sheet.getRange(rowNumber, sentColIndex + 1).setValue(new Date());
+      // Mark as sent
+      sheet.getRange(rowNumber, sentColIndex + 1).setValue(new Date());
       sentCount++;
 
     } catch (e) {
-      if (sentColIndex !== -1) sheet.getRange(rowNumber, sentColIndex + 1).setValue("ERR: " + e.message);
+      sheet.getRange(rowNumber, sentColIndex + 1).setValue("ERR: " + e.message);
       errorRows.push(`Row ${rowNumber}: ${e.message}`);
-      Logger.log(e);
+      Logger.log("Error on row " + rowNumber + ": " + e);
     }
   }
 
