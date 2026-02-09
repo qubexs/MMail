@@ -3,39 +3,278 @@
   <head>
     <base target="_top">
     <style>
-      body { font-family: Arial; padding: 12px; }
-      label { display: block; margin-top: 10px; font-weight: bold; }
-      input, textarea { width: 100%; margin-top: 4px; padding: 6px; }
-      textarea { height: 200px; font-family: monospace; }
-      button { margin-top: 12px; padding: 6px 12px; }
+      body { 
+        font-family: 'Segoe UI', Arial, sans-serif; 
+        padding: 15px; 
+        margin: 0;
+        background: #f5f5f5;
+      }
+      h3 { margin-top: 0; color: #333; }
+
+      label { 
+        display: block; 
+        margin-top: 12px; 
+        font-weight: 600; 
+        color: #555;
+      }
+      input { 
+        width: 100%; 
+        margin-top: 5px; 
+        padding: 8px; 
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        box-sizing: border-box;
+        font-size: 14px;
+      }
+
+      /* Tabs */
+      .tab-container {
+        margin-top: 10px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        overflow: hidden;
+      }
+      .tab-buttons {
+        display: flex;
+        background: #fafafa;
+        border-bottom: 1px solid #e0e0e0;
+      }
+      .tab-btn {
+        flex: 1;
+        padding: 12px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        font-weight: 600;
+        color: #666;
+        transition: all 0.3s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+      }
+      .tab-btn:hover {
+        background: #f0f0f0;
+        color: #333;
+      }
+      .tab-btn.active {
+        background: white;
+        color: #4285f4;
+        border-bottom: 3px solid #4285f4;
+      }
+
+      /* Content */
+      .tab-content {
+        display: none;
+        padding: 15px;
+      }
+      .tab-content.active {
+        display: block;
+      }
+
+      /* Code editor */
+      #body-code {
+        width: 100%;
+        height: 350px;
+        font-family: Consolas, Monaco, monospace;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        resize: vertical;
+        font-size: 13px;
+        line-height: 1.5;
+        box-sizing: border-box;
+      }
+
+      /* Visual editor */
+      #body-visual {
+        width: 100%;
+        height: 350px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 12px;
+        background: white;
+        overflow-y: auto;
+        outline: none;
+        box-sizing: border-box;
+      }
+      #body-visual:focus {
+        border-color: #4285f4;
+        box-shadow: 0 0 0 3px rgba(66,133,244,0.1);
+      }
+
+      /* Toolbar */
+      .editor-toolbar {
+        display: none;
+        padding: 10px;
+        background: #f8f9fa;
+        border-bottom: 1px solid #e0e0e0;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin: -15px -15px 10px -15px;
+        width: calc(100% + 30px);
+      }
+      .tab-content.active .editor-toolbar {
+        display: flex;
+      }
+
+      .tool-btn {
+        padding: 6px 14px;
+        min-height: 32px;
+        border: 1px solid #ddd;
+        background: white;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+      }
+      .tool-btn:hover {
+        background: #f1f3f4;
+        border-color: #bbb;
+      }
+      .tool-btn:active {
+        background: #e8f0fe;
+        border-color: #4285f4;
+      }
+
+      .toolbar-divider {
+        width: 1px;
+        height: 20px;
+        background: #ddd;
+        margin: 0 6px;
+      }
+
+      .helper {
+        font-size: 0.85em;
+        color: #888;
+        margin-top: 4px;
+        margin-bottom: 8px;
+      }
     </style>
   </head>
+
   <body>
-    <h3>Edit Email Template</h3>
+    <h3>✉️ Email Template Editor</h3>
 
-    <label for="subject">Subject:</label>
-    <input type="text" id="subject">
+    <label>Subject Line:</label>
+    <input id="subject" type="text" placeholder="e.g. Welcome email">
 
-    <label for="body">Body (HTML supported, use {{valueN}} for placeholders):</label>
-    <textarea id="body"></textarea>
+    <label>Email Body:</label>
+    <div class="helper">Use <code>{{placeholder}}</code> manually</div>
 
-    <button onclick="saveTemplate()">Save</button>
-    <button onclick="google.script.host.close()">Close</button>
+    <div class="tab-container">
+      <div class="tab-buttons">
+        <button class="tab-btn active" onclick="switchTab('code', this)">📝 Code</button>
+        <button class="tab-btn" onclick="switchTab('visual', this)">🎨 Visual</button>
+      </div>
+
+      <!-- CODE -->
+      <div id="tab-code" class="tab-content active">
+        <textarea id="body-code"></textarea>
+      </div>
+
+      <!-- VISUAL -->
+      <div id="tab-visual" class="tab-content">
+        <div class="editor-toolbar">
+          <button class="tool-btn" onclick="formatDoc('bold')"><b>B</b></button>
+          <button class="tool-btn" onclick="formatDoc('italic')"><i>I</i></button>
+          <button class="tool-btn" onclick="formatDoc('underline')"><u>U</u></button>
+
+          <div class="toolbar-divider"></div>
+
+          <button class="tool-btn" onclick="formatDoc('insertUnorderedList')">• List</button>
+          <button class="tool-btn" onclick="formatDoc('insertOrderedList')">1. List</button>
+
+          <div class="toolbar-divider"></div>
+
+          <button class="tool-btn" onclick="formatDoc('justifyLeft')">⬅️</button>
+          <button class="tool-btn" onclick="formatDoc('justifyCenter')">⬆️</button>
+          <button class="tool-btn" onclick="formatDoc('justifyRight')">➡️</button>
+
+          <div class="toolbar-divider"></div>
+
+          <button class="tool-btn" onclick="insertLink()">🔗 Link</button>
+          <button class="tool-btn" onclick="clearFormat()" style="color:#d32f2f">🧹 Clear</button>
+        </div>
+
+        <div id="body-visual" contenteditable="true"></div>
+      </div>
+    </div>
+
+    <div style="margin-top:20px;display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="loadSample()">📄 Sample</button>
+      <button onclick="google.script.host.close()">Cancel</button>
+      <button onclick="saveTemplate()">💾 Save</button>
+    </div>
 
     <script>
-      // Load current template
-      google.script.run.withSuccessHandler(function(template){
-        document.getElementById('subject').value = template.subject;
-        document.getElementById('body').value = template.body;
+      let syncing = false;
+      const code = document.getElementById('body-code');
+      const visual = document.getElementById('body-visual');
+
+      google.script.run.withSuccessHandler(t => {
+        subject.value = t.subject || '';
+        code.value = t.body || '';
       }).getEmailTemplate();
 
-      function saveTemplate() {
-        const subject = document.getElementById('subject').value;
-        const body = document.getElementById('body').value;
+      function switchTab(tab, btn) {
+        if (syncing) return;
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-' + tab).classList.add('active');
+        tab === 'visual' ? syncToVisual() : syncToCode();
+      }
 
-        google.script.run.withSuccessHandler(function(){
-          alert('Template saved successfully!');
-        }).saveEmailTemplate(subject, body);
+      function syncToVisual() {
+        syncing = true;
+        visual.innerHTML = code.value;
+        syncing = false;
+      }
+
+      function syncToCode() {
+        syncing = true;
+        code.value = visual.innerHTML;
+        syncing = false;
+      }
+
+      function formatDoc(cmd, val = null) {
+        document.execCommand(cmd, false, val);
+        visual.focus();
+      }
+
+      function insertLink() {
+        const url = prompt('URL:', 'https://');
+        if (url) formatDoc('createLink', url);
+      }
+
+      function clearFormat() {
+        formatDoc('removeFormat');
+        formatDoc('unlink');
+      }
+
+      function loadSample() {
+        code.value =
+`<h2>Assalammualaikum {{value1}}</h2>
+<p>Password: <b>{{value9}}</b></p>
+<p>Date: {{value6}}</p>
+<p>Time: {{value7}}</p>
+<p>Place: {{value8}}</p>`;
+        syncToVisual();
+      }
+
+      function saveTemplate() {
+        syncToCode();
+        if (!subject.value || !code.value) return alert('Fill subject & body');
+        google.script.run.saveEmailTemplate(subject.value, code.value);
+        google.script.host.close();
       }
     </script>
   </body>
