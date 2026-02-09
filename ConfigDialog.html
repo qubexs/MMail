@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial; padding: 12px; }
+    h3 { margin-top: 0; }
+    label { display: block; margin-top: 10px; font-weight: bold; }
+    select, input { width: 100%; padding: 6px; margin-top: 4px; }
+    button { margin-top: 15px; width: 100%; padding: 8px; font-size: 14px; }
+    .hint { font-size: 12px; color: #666; }
+  </style>
+</head>
+
+<body>
+<h3>Configure Template & Mapping</h3>
+
+<label>Template ID</label>
+<input type="text" id="templateId" placeholder="Google Docs Template ID">
+
+<label>Folder ID</label>
+<input type="text" id="folderId" placeholder="Google Drive Folder ID">
+
+<hr>
+
+<h4>Placeholder Mapping</h4>
+<div class="hint">Each {{valueX}} can only be used once</div>
+
+<div id="placeholderContainer"></div>
+
+<hr>
+
+<label>Options</label>
+<select id="optionsSelect" multiple>
+  <option value="generate">Generate Certificates</option>
+  <option value="send">Send Emails</option>
+  <option value="both">Generate & Send</option>
+</select>
+
+<button onclick="submitConfig()">Save & Continue</button>
+
+<script>
+  let placeholderValues = [];
+
+  function setHeaderArray(headerRow) {
+    const usableColumns = headerRow.length - 1; // skip index column
+    placeholderValues = Array.from(
+      { length: usableColumns },
+      (_, i) => `{{value${i + 1}}}`
+    );
+
+    const container = document.getElementById("placeholderContainer");
+    container.innerHTML = "";
+
+    placeholderValues.forEach((_, idx) => {
+      const colIndex = idx + 1;
+
+      const label = document.createElement("label");
+      label.textContent = `dValue${colIndex} (${headerRow[colIndex] || "Column " + colIndex})`;
+      container.appendChild(label);
+
+      const select = document.createElement("select");
+      select.className = "valueSelect";
+      select.dataset.key = `dValue${colIndex}`;
+      container.appendChild(select);
+    });
+
+    refreshDropdowns();
+  }
+
+  function refreshDropdowns() {
+    const selects = document.querySelectorAll(".valueSelect");
+    const used = Array.from(selects).map(s => s.value).filter(Boolean);
+
+    selects.forEach(select => {
+      const current = select.value;
+      select.innerHTML = `<option value="">-- Select --</option>`;
+
+      placeholderValues.forEach(v => {
+        if (!used.includes(v) || v === current) {
+          const opt = document.createElement("option");
+          opt.value = v;
+          opt.textContent = v;
+          if (v === current) opt.selected = true;
+          select.appendChild(opt);
+        }
+      });
+    });
+  }
+
+  document.addEventListener("change", e => {
+    if (e.target.classList.contains("valueSelect")) {
+      refreshDropdowns();
+    }
+  });
+
+  function submitConfig() {
+    const templateId = document.getElementById("templateId").value.trim();
+    const folderId = document.getElementById("folderId").value.trim();
+
+    if (!templateId || !folderId) {
+      alert("Template ID and Folder ID are required.");
+      return;
+    }
+
+    const options = Array.from(
+      document.getElementById("optionsSelect").selectedOptions
+    ).map(o => o.value);
+
+    const mapping = {};
+    document.querySelectorAll(".valueSelect").forEach(select => {
+      if (select.value) {
+        mapping[select.dataset.key] = select.value;
+      }
+    });
+
+    google.script.run
+      .withSuccessHandler(() => {
+        alert("Configuration saved successfully!");
+        google.script.host.close();
+      })
+      .withFailureHandler(err => {
+        alert("Error: " + err.message);
+      })
+      .saveConfig(templateId, folderId, options, mapping);
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    google.script.run.withSuccessHandler(setHeaderArray).getHeaderRow();
+  });
+</script>
+
+</body>
+</html>

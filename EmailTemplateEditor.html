@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { font-family: Arial; padding: 12px; }
+      label { display: block; margin-top: 10px; font-weight: bold; }
+      input, textarea { width: 100%; margin-top: 4px; padding: 6px; }
+      textarea { height: 200px; font-family: monospace; }
+      button { margin-top: 12px; padding: 6px 12px; }
+    </style>
+  </head>
+  <body>
+    <h3>Edit Email Template</h3>
+
+    <label for="subject">Subject:</label>
+    <input type="text" id="subject">
+
+    <label for="body">Body (HTML supported, use {{valueN}} for placeholders):</label>
+    <textarea id="body"></textarea>
+
+    <button onclick="saveTemplate()">Save</button>
+    <button onclick="google.script.host.close()">Close</button>
+
+    <script>
+      // Load current template
+      google.script.run.withSuccessHandler(function(template){
+        document.getElementById('subject').value = template.subject;
+        document.getElementById('body').value = template.body;
+      }).getEmailTemplate();
+
+      function saveTemplate() {
+        const subject = document.getElementById('subject').value;
+        const body = document.getElementById('body').value;
+
+        google.script.run.withSuccessHandler(function(){
+          alert('Template saved successfully!');
+        }).saveEmailTemplate(subject, body);
+      }
+    </script>
+  </body>
+</html>
