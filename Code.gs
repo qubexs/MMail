@@ -231,6 +231,31 @@ function testAccess() {
   ui.alert("Access Test Result", msg, ui.ButtonSet.OK);
 }
 
+
+// Mapping-driven detection
+function getEmailAndFileIdFromMapping(mapping, row) {
+  let email = "";
+  let fileId = "";
+
+  // Set which dValue corresponds to email/fileId
+  const EMAIL_dValue = "dValue6";   // <-- replace with your mapping for email
+  const FILEID_dValue = "dValue9";  // <-- replace with your mapping for PDF/FileID
+
+  if (mapping[EMAIL_dValue]) {
+    const colIndex = parseInt(EMAIL_dValue.replace("dValue", ""), 10) - 1;
+    email = row[colIndex] ?? "(email not found)";
+  }
+
+  if (mapping[FILEID_dValue]) {
+    const colIndex = parseInt(FILEID_dValue.replace("dValue", ""), 10) - 1;
+    fileId = row[colIndex] ?? "(fileId not found)";
+  }
+
+  return { email, fileId };
+}
+
+
+
 // ---------------- Generate Certificates Only (DYNAMIC) ----------------
 function generateCertificates() {
   const ui = SpreadsheetApp.getUi();
@@ -405,7 +430,7 @@ function getEmailAndFileIdFromRow(row) {
 }
 
 // ---------------- Preview Email (Fixed - Mapping-driven) ----------------
-function previewEmailForSelectedRow() {
+function previewEmailForSelectedRowX() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   const selection = sheet.getActiveRange();
   if (!selection) return SpreadsheetApp.getUi().alert("Please select a row to preview.");
@@ -543,7 +568,142 @@ function previewEmailForSelectedRow() {
 }
 
 
+
+//--- Email Preview -----
+
+function previewEmailForSelectedRow() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const selection = sheet.getActiveRange();
+  if (!selection) return SpreadsheetApp.getUi().alert("Please select a row to preview.");
+
+  const rowNumber = selection.getRow();
+  if (rowNumber === 1) return SpreadsheetApp.getUi().alert("Please select a data row, not the header.");
+
+  const props = PropertiesService.getDocumentProperties();
+  const mappingProp = props.getProperty("MAPPING");
+  const subjectTpl = props.getProperty("EMAIL_SUBJECT");
+  const bodyTpl = props.getProperty("EMAIL_BODY");
+
+  if (!mappingProp || !subjectTpl || !bodyTpl)
+    return SpreadsheetApp.getUi().alert("Missing Mapping or Email Template. Please run Setup first.");
+
+  const mapping = JSON.parse(mappingProp);
+
+  const row = sheet.getRange(rowNumber, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+  // Malay month names
+  const malayMonths = ["Januari","Februari","Mac","April","Mei","Jun","Julai","Ogos","September","Oktober","November","Disember"];
+
+  // Function to format dates to DD <Month in Malay> YYYY
+  function formatMalayDate(value) {
+    if (value instanceof Date && !isNaN(value)) {
+      const day = value.getDate();
+      const month = malayMonths[value.getMonth()];
+      const year = value.getFullYear();
+      return `${day} ${month} ${year}`;
+    }
+    return value;
+  }
+
+  // ------------------- Mapping-driven Email & FileID -------------------
+  function getEmailAndFileIdFromMapping(mapping, row) {
+    let email = "";
+    let fileId = "";
+
+    const EMAIL_dValue = "dValue6";   // replace with your actual email dValue
+    const FILEID_dValue = "dValue13";  // replace with your actual PDF/FileID dValue
+
+    if (mapping[EMAIL_dValue]) {
+      const colIndex = parseInt(EMAIL_dValue.replace("dValue", ""), 10) - 1;
+      email = row[colIndex] ?? "(email not found)";
+    }
+
+    if (mapping[FILEID_dValue]) {
+      const colIndex = parseInt(FILEID_dValue.replace("dValue", ""), 10) - 1;
+      fileId = row[colIndex] ?? "(fileId not found)";
+    }
+
+    return { email, fileId };
+  }
+
+  const { email, fileId } = getEmailAndFileIdFromMapping(mapping, row);
+
+  // ------------------- Replace placeholders in subject/body -------------------
+  const subject = Object.keys(mapping).reduce((acc, dKey) => {
+    const placeholder = mapping[dKey].replace(/[{}]/g, "");
+    const colIndex = parseInt(dKey.replace("dValue", ""), 10) - 1;
+    let value = row[colIndex] ?? "";
+    value = formatMalayDate(value); // convert if date
+    return acc.replace(new RegExp("\\{\\{\\s*" + placeholder + "\\s*\\}\\}", "g"), value);
+  }, subjectTpl);
+
+  const body = Object.keys(mapping).reduce((acc, dKey) => {
+    const placeholder = mapping[dKey].replace(/[{}]/g, "");
+    const colIndex = parseInt(dKey.replace("dValue", ""), 10) - 1;
+    let value = row[colIndex] ?? "";
+    value = formatMalayDate(value); // convert if date
+    return acc.replace(new RegExp("\\{\\{\\s*" + placeholder + "\\s*\\}\\}", "g"), value);
+  }, bodyTpl);
+
+  // ------------------- Build preview HTML -------------------
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <base target="_top">
+      <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .field { margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; }
+        .label { font-weight: bold; color: #555; font-size: 12px; text-transform: uppercase; }
+        .value { margin-top: 4px; color: #333; }
+        .body-box { border: 1px solid #ddd; padding: 15px; border-radius: 4px; background: white; max-height: 300px; overflow: auto; }
+        .attachment { color: #4285f4; }
+        button { margin-top: 15px; padding: 10px 20px; background: #4285f4; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #3367d6; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h3>📧 Email Preview - Row ${rowNumber}</h3>
+
+        <div class="field">
+          <div class="label">To:</div>
+          <div class="value">${email}</div>
+        </div>
+
+        <div class="field">
+          <div class="label">Attachment:</div>
+          <div class="value attachment">${fileId}</div>
+        </div>
+
+        <div class="field">
+          <div class="label">Subject:</div>
+          <div class="value">${subject}</div>
+        </div>
+
+        <div class="field">
+          <div class="label">Body:</div>
+          <div class="body-box">${body}</div>
+        </div>
+
+        <button onclick="google.script.host.close()">Close Preview</button>
+      </div>
+    </body>
+    </html>
+  `;
+
+  SpreadsheetApp.getUi().showModalDialog(
+    HtmlService.createHtmlOutput(htmlContent).setWidth(650).setHeight(500),
+    `Preview - Row ${rowNumber}`
+  );
+}
+
+
+
+
 // ---------------- Send Emails (Mapping-driven Email/FileID/Dynamic Mapping) ----------------
+
 function sendCertificatesEmail() {
   const ui = SpreadsheetApp.getUi();
   const props = PropertiesService.getDocumentProperties();
@@ -554,7 +714,8 @@ function sendCertificatesEmail() {
   const bodyTpl = props.getProperty("EMAIL_BODY") || "Dear {{value1}},\n\nPlease find your certificate attached.";
 
   if (!mappingProp || !folderId) {
-    return ui.alert("Mapping or Folder ID not found. Please run 'Setup Template & Folder' first.");
+    ui.alert("Mapping or Folder ID not found. Please run 'Setup Template & Folder' first.");
+    return;
   }
 
   const mapping = JSON.parse(mappingProp);
@@ -565,33 +726,47 @@ function sendCertificatesEmail() {
 
   // Find "Hantar" column
   const sentColIndex = headers.indexOf("Hantar");
-  if (sentColIndex === -1) return ui.alert("Column 'Sent' not found!");
+  if (sentColIndex === -1) {
+    ui.alert("Column 'Hantar' not found!");
+    return;
+  }
+
+  // Malay month names
+  const malayMonths = ["Januari","Februari","Mac","April","Mei","Jun","Julai","Ogos","September","Oktober","November","Disember"];
+
+  // Function to format dates to DD <Month in Malay> YYYY
+  function formatMalayDate(value) {
+    if (value instanceof Date && !isNaN(value)) {
+      const day = value.getDate();
+      const month = malayMonths[value.getMonth()];
+      const year = value.getFullYear();
+      return `${day} ${month} ${year}`;
+    }
+    return value;
+  }
 
   // Auto-detect Email and FileID (PDF Name) columns
   let emailColIndex = null;
   let fileNameColIndex = null;
-  
+
   if (data.length > 1) {
     const firstRow = data[1];
-    
+
     for (const dKey in mapping) {
       const colIndex = parseInt(dKey.replace("dValue", ""), 10) - 1;
       if (colIndex >= firstRow.length) continue;
-      
-      const value = String(firstRow[colIndex] || "");
-      
-      // Detect email
-      if (value.includes("@") && value.includes(".")) {
+
+      const value = firstRow[colIndex];
+
+      if (typeof value === "string" && value.includes("@") && value.includes(".")) {
         emailColIndex = colIndex;
-      }
-      // Detect PDF filename (starts with DOC_ and ends with .pdf)
-      else if (value.startsWith("DOC_") && value.endsWith(".pdf")) {
+      } else if (typeof value === "string" && value.startsWith("DOC_") && value.endsWith(".pdf")) {
         fileNameColIndex = colIndex;
       }
     }
   }
 
-  // Fallback to header names if auto-detect fails
+  // Fallback to header names
   if (emailColIndex === null) {
     emailColIndex = headers.findIndex(h => /email|e-mail|emel/i.test(String(h)));
   }
@@ -600,18 +775,19 @@ function sendCertificatesEmail() {
   }
 
   if (emailColIndex === null || fileNameColIndex === null) {
-    return ui.alert(
+    ui.alert(
       `Could not detect columns:\n` +
       `Email: ${emailColIndex !== null ? 'Found' : 'NOT FOUND'}\n` +
-      `PDF Filename: ${fileNameColIndex !== null ? 'Found' : 'NOT FOUND'}\n\n` +
-      `Please ensure you have run "Generate Merge Doc" first.`
+      `PDF Filename: ${fileNameColIndex !== null ? 'Found' : 'NOT FOUND'}`
     );
+    return;
   }
 
   let sentCount = 0;
+  const MAX_PER_RUN = 35;
   let errorRows = [];
 
-  for (let i = 1; i < data.length; i++) {
+  for (let i = 1; i < data.length && sentCount < MAX_PER_RUN; i++) {
     const rowNumber = i + 1;
     const row = data[i];
 
@@ -622,29 +798,30 @@ function sendCertificatesEmail() {
     try {
       const email = row[emailColIndex];
       const pdfName = row[fileNameColIndex];
-      
+
       if (!email) throw new Error("Email missing");
       if (!pdfName) throw new Error("PDF filename missing");
 
-      // Find PDF file by name in the folder
       const files = folder.getFilesByName(pdfName);
       if (!files.hasNext()) {
-        throw new Error(`PDF not found in Drive: ${pdfName}`);
+        throw new Error(`PDF not found: ${pdfName}`);
       }
       const pdfFile = files.next().getAs(MimeType.PDF);
 
-      // Replace placeholders in subject/body
+      // Replace placeholders with date formatting
       const subject = Object.keys(mapping).reduce((acc, dKey) => {
         const placeholder = mapping[dKey].replace(/[{}]/g, "");
         const colIndex = parseInt(dKey.replace("dValue", ""), 10) - 1;
-        const value = row[colIndex] ?? "";
+        let value = row[colIndex] ?? "";
+        value = formatMalayDate(value); // convert if Date
         return acc.replace(new RegExp("\\{\\{\\s*" + placeholder + "\\s*\\}\\}", "g"), value);
       }, subjectTpl);
 
       const body = Object.keys(mapping).reduce((acc, dKey) => {
         const placeholder = mapping[dKey].replace(/[{}]/g, "");
         const colIndex = parseInt(dKey.replace("dValue", ""), 10) - 1;
-        const value = row[colIndex] ?? "";
+        let value = row[colIndex] ?? "";
+        value = formatMalayDate(value); // convert if Date
         return acc.replace(new RegExp("\\{\\{\\s*" + placeholder + "\\s*\\}\\}", "g"), value);
       }, bodyTpl);
 
@@ -655,6 +832,9 @@ function sendCertificatesEmail() {
         htmlBody: body.replace(/\n/g, "<br>"),
         attachments: [pdfFile]
       });
+
+      // Delay to avoid throttling
+      Utilities.sleep(8000);
 
       // Mark as sent
       sheet.getRange(rowNumber, sentColIndex + 1).setValue(new Date());
@@ -667,7 +847,31 @@ function sendCertificatesEmail() {
     }
   }
 
-  let msg = `Email sending complete!\nTotal sent: ${sentCount}`;
+  // Schedule next run if needed
+  if (sentCount >= MAX_PER_RUN) {
+    scheduleNextRun();
+  }
+
+  let msg = `Batch complete.\nSent this run: ${sentCount}`;
   if (errorRows.length) msg += "\n\nErrors:\n" + errorRows.join("\n");
+
   ui.alert(msg);
+}
+
+
+// ---------------- Schedule next batch ----------------
+function scheduleNextRun() {
+  // Remove old triggers first
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(t => {
+    if (t.getHandlerFunction() === "sendCertificatesEmail") {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+
+  // Create new trigger
+  ScriptApp.newTrigger("sendCertificatesEmail")
+    .timeBased()
+    .after(5 * 60 * 1000) // 5 minutes later
+    .create();
 }
